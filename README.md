@@ -119,20 +119,20 @@ python3 --version
 
 ## 🚀 Como Executar o Projeto
 
-### 1. 📦 Clonar o repositório
+### 1. 📂 Clonar o repositório
 
 ```bash
 git clone https://github.com/kennedy7x/Trabalho-de-Sistema-de-Cadastro.git
 cd Trabalho-de-Sistema-de-Cadastro
 ```
 
-### 2. 📦 Instalar as dependências
+### 2. 📋 Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 📦 Executar o sistema
+### 3. 🎬 Executar o sistema
 
 ```bash
 python main.py
