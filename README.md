@@ -114,9 +114,10 @@ Antes de executar o sistema, certifique-se de ter instalado:
 python --version
 # ou
 python3 --version
+```
 
 ---
-```
+
 ## Como Executar o Projeto
 
 
