@@ -24,6 +24,8 @@ Sistema desktop desenvolvido em **Python** com **PySide6** para cadastro e geren
 12. [Solução de Problemas](#solução-de-problemas)
 13. [Próximos Passos](#próximos-passos)
 14. [Licença](#licença)
+15. [Como Executar o Projeto](#como-executar-o-projeto)
+16. [Dependências](#dependências)
 
 ---
 
@@ -114,19 +116,25 @@ python --version
 python3 --version
 
 ---
+```
+## Como Executar o Projeto
 
-## 🚀 Como Executar o Projeto
 
 ### 1. Clonar o repositório
 
 ```bash
 git clone https://github.com/kennedy7x/Trabalho-de-Sistema-de-Cadastro.git
 cd Trabalho-de-Sistema-de-Cadastro
+```
 
-## Instalar as dependências
+### 2. Instalar as dependências
 
+```bash
 pip install -r requirements.txt
+```
 
-## Executar o sistema
+### 3. Executar o sistema
 
+```bash
 python main.py
+```
