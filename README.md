@@ -120,7 +120,6 @@ python3 --version
 
 ## Como Executar o Projeto
 
-
 ### 1. Clonar o repositório
 
 ```bash
