@@ -25,7 +25,6 @@ Sistema desktop desenvolvido em **Python** com **PySide6** para cadastro e geren
 13. [Próximos Passos](#próximos-passos)
 14. [Licença](#licença)
 15. [Como Executar o Projeto](#como-executar-o-projeto)
-16. [Dependências](#dependências)
 
 ---
 
