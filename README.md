@@ -117,7 +117,7 @@ python3 --version
 
 ---
 
-## Como Executar o Projeto
+## 🚀 Como Executar o Projeto
 
 ### 1. Clonar o repositório
 
@@ -136,4 +136,14 @@ pip install -r requirements.txt
 
 ```bash
 python main.py
+```
+
+---
+
+## 📦 Dependências
+
+As dependências estão listadas no arquivo `requirements.txt`:
+
+```bash
+pip install PySide6 requests
 ```
