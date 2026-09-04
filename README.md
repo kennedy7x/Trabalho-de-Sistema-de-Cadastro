@@ -119,7 +119,7 @@ python3 --version
 
 ## 🚀 Como Executar o Projeto
 
-### 1. 📂 Clonar o repositório
+### 1. 💾 Clonar o repositório
 
 ```bash
 git clone https://github.com/kennedy7x/Trabalho-de-Sistema-de-Cadastro.git
