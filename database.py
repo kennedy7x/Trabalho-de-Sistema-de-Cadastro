@@ -1,5 +1,7 @@
+# database.py
 import sqlite3
 from datetime import datetime
+
 
 class Database:
     def __init__(self):
@@ -20,7 +22,6 @@ class Database:
     def create_tables(self):
         """Cria as tabelas necessárias"""
         try:
-            # Tabela de pessoas
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS pessoas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +46,7 @@ class Database:
         except sqlite3.Error as e:
             print(f"Erro ao criar tabela: {e}")
 
+    # ==================== CREATE ====================
     def insert_pessoa(self, dados):
         """Insere uma nova pessoa no banco de dados"""
         try:
@@ -74,6 +76,7 @@ class Database:
         except sqlite3.Error as e:
             return False, f"Erro ao salvar: {e}"
 
+    # ==================== READ ====================
     def get_all_pessoas(self):
         """Retorna todas as pessoas cadastradas"""
         try:
@@ -101,6 +104,18 @@ class Database:
             print(f"Erro ao buscar pessoa: {e}")
             return None
 
+    def get_pessoa_by_id(self, id):
+        """Busca uma pessoa pelo ID"""
+        try:
+            self.cursor.execute('''
+                SELECT * FROM pessoas WHERE id = ?
+            ''', (id,))
+            return self.cursor.fetchone()
+        except sqlite3.Error as e:
+            print(f"Erro ao buscar pessoa: {e}")
+            return None
+
+    # ==================== UPDATE ====================
     def update_pessoa(self, id, dados):
         """Atualiza uma pessoa existente"""
         try:
@@ -130,6 +145,7 @@ class Database:
         except sqlite3.Error as e:
             return False, f"Erro ao atualizar: {e}"
 
+    # ==================== DELETE ====================
     def delete_pessoa(self, id):
         """Remove uma pessoa do banco de dados"""
         try:
@@ -139,17 +155,29 @@ class Database:
         except sqlite3.Error as e:
             return False, f"Erro ao remover: {e}"
 
+    # ==================== FILTRO/PESQUISA ====================
     def search_pessoas(self, termo):
-        """Busca pessoas por nome ou CPF/CNPJ"""
+        """
+        Busca pessoas por múltiplos campos (nome, CPF/CNPJ, email, cidade)
+        Este método é usado pelo campo de filtro da interface
+        """
         try:
+            termo_like = f'%{termo}%'
             self.cursor.execute('''
                 SELECT id, nome_completo, cpf_cnpj, email, celular, 
                        cep, logradouro, numero, complemento, bairro, 
-                       cidade, estado, tipo_pessoa
+                       cidade, estado, tipo_pessoa,
+                       datetime(data_cadastro, 'localtime') as data_cadastro
                 FROM pessoas 
-                WHERE nome_completo LIKE ? OR cpf_cnpj LIKE ?
+                WHERE nome_completo LIKE ? 
+                   OR cpf_cnpj LIKE ? 
+                   OR email LIKE ?
+                   OR cidade LIKE ?
+                   OR bairro LIKE ?
+                   OR logradouro LIKE ?
                 ORDER BY nome_completo
-            ''', (f'%{termo}%', f'%{termo}%'))
+            ''', (termo_like, termo_like, termo_like, 
+                  termo_like, termo_like, termo_like))
             return self.cursor.fetchall()
         except sqlite3.Error as e:
             print(f"Erro ao buscar pessoas: {e}")
@@ -164,14 +192,3 @@ class Database:
     def __del__(self):
         """Destrutor para garantir que a conexão seja fechada"""
         self.close()
-
-    def get_pessoa_by_id(self, id):
-        """Busca uma pessoa pelo ID"""
-        try:
-            self.cursor.execute('''
-                SELECT * FROM pessoas WHERE id = ?
-            ''', (id,))
-            return self.cursor.fetchone()
-        except sqlite3.Error as e:
-            print(f"Erro ao buscar pessoa: {e}")
-            return None

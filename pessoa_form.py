@@ -1,10 +1,12 @@
+# pessoa_form.py
 import sys
+import os
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QComboBox, 
     QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout,
     QGroupBox, QMessageBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QGridLayout, QScrollArea, QFrame, QSizePolicy,
-    QTabWidget, QSpacerItem
+    QTabWidget, QSpacerItem, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QIcon, QColor, QPalette, QPixmap, QPainter, QBrush, QLinearGradient
@@ -12,31 +14,32 @@ from PySide6.QtGui import QFont, QIcon, QColor, QPalette, QPixmap, QPainter, QBr
 from database import Database
 from validators import Validators
 from cep_service import CEPService
+from pdf_exporter import PDFExporter
+
 
 class PessoaForm(QWidget):
     def __init__(self):
         super().__init__()
         self.db = Database()
         self.cep_service = CEPService()
+        self.pdf_exporter = PDFExporter()
         self.modo_edicao = False
         self.id_editando = None
         self.tabela = None
-        self.tabs = None  # <-- ADICIONE ESTA LINHA
+        self.tabs = None
+        self.dados_filtrados = []  # Armazena os dados atualmente exibidos na tabela
         self.init_ui()
-        # Carrega a lista APÓS a UI estar pronta
         QTimer.singleShot(100, self.carregar_lista_pessoas)
         
     def init_ui(self):
         self.setWindowTitle("🌟 Sistema de Cadastro de Pessoas")
         
-        # Layout responsivo - ajusta tamanho baseado na tela
         screen = QApplication.primaryScreen().availableGeometry()
         width = min(screen.width() - 50, 1200)
         height = min(screen.height() - 50, 800)
         self.resize(width, height)
         self.setMinimumSize(650, 550)
         
-        # Aplica estilo global
         self.setStyleSheet("""
             QWidget {
                 font-family: 'Segoe UI', 'Arial', sans-serif;
@@ -158,7 +161,6 @@ class PessoaForm(QWidget):
             }
         """)
         
-        # Layout principal
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
@@ -194,7 +196,7 @@ class PessoaForm(QWidget):
         
         main_layout.addWidget(header_widget)
         
-        # ==================== CRIAR AS ABAS PRIMEIRO ====================
+        # ==================== CRIAR AS ABAS ====================
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget {
@@ -489,12 +491,12 @@ class PessoaForm(QWidget):
         lista_title.setStyleSheet("color: #2C3E50; margin-bottom: 8px;")
         layout_lista.addWidget(lista_title)
         
-        # Barra de pesquisa
+        # Barra de pesquisa e botões
         layout_pesquisa = QHBoxLayout()
         layout_pesquisa.setSpacing(10)
         
         self.busca_input = QLineEdit()
-        self.busca_input.setPlaceholderText("🔍 Pesquisar por nome ou CPF/CNPJ...")
+        self.busca_input.setPlaceholderText("🔍 Pesquisar por nome, CPF/CNPJ, email ou cidade...")
         self.busca_input.setFixedHeight(38)
         self.busca_input.setStyleSheet("""
             QLineEdit {
@@ -511,6 +513,28 @@ class PessoaForm(QWidget):
         """)
         self.busca_input.textChanged.connect(self.pesquisar_pessoas)
         layout_pesquisa.addWidget(self.busca_input)
+        
+        # Botão Limpar Filtro
+        self.btn_limpar_filtro = QPushButton("🧹 Limpar Filtro")
+        self.btn_limpar_filtro.setFixedHeight(38)
+        self.btn_limpar_filtro.setFixedWidth(130)
+        self.btn_limpar_filtro.clicked.connect(self.limpar_filtro)
+        self.btn_limpar_filtro.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #95A5A6, stop:1 #7F8C8D);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #7F8C8D, stop:1 #6B7A7B);
+            }
+        """)
+        layout_pesquisa.addWidget(self.btn_limpar_filtro)
         
         self.btn_atualizar = QPushButton("🔄 Atualizar")
         self.btn_atualizar.setFixedHeight(38)
@@ -532,6 +556,31 @@ class PessoaForm(QWidget):
             }
         """)
         layout_pesquisa.addWidget(self.btn_atualizar)
+        
+        # Botão Exportar PDF
+        self.btn_exportar_pdf = QPushButton("📄 Exportar PDF")
+        self.btn_exportar_pdf.setFixedHeight(38)
+        self.btn_exportar_pdf.setFixedWidth(140)
+        self.btn_exportar_pdf.clicked.connect(self.exportar_pdf)
+        self.btn_exportar_pdf.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #E74C3C, stop:1 #C0392B);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #C0392B, stop:1 #A93226);
+            }
+            QPushButton:disabled {
+                background: #95A5A6;
+            }
+        """)
+        layout_pesquisa.addWidget(self.btn_exportar_pdf)
         
         layout_lista.addLayout(layout_pesquisa)
         
@@ -579,29 +628,21 @@ class PessoaForm(QWidget):
         
         layout_lista.addWidget(self.tabela)
         
-        # ==================== ADICIONAR AS ABAS AO TAB WIDGET ====================
+        # ==================== ADICIONAR AS ABAS ====================
         self.tabs.addTab(tab_cadastro, "📝 Cadastro")
         self.tabs.addTab(tab_lista, "📋 Lista de Usuários Cadastrados")
         
-        # ==================== ADICIONAR O TAB WIDGET AO LAYOUT PRINCIPAL ====================
         main_layout.addWidget(self.tabs)
-        
         self.setLayout(main_layout)
         
-        # Carrega a lista APÓS a UI estar totalmente construída
         QTimer.singleShot(50, self.carregar_lista_pessoas)
     
-    # ---------- MÉTODO PARA VALIDAR CELULAR (SOMENTE NÚMEROS) ----------
+    # ---------- MÉTODO PARA VALIDAR CELULAR ----------
     def on_celular_changed(self, text):
-        """Permite apenas números no campo celular e formata"""
-        # Remove caracteres não numéricos
         numeros = ''.join(filter(str.isdigit, text))
-        
-        # Limita a 11 dígitos
         if len(numeros) > 11:
             numeros = numeros[:11]
         
-        # Formata
         if len(numeros) <= 2:
             self.celular_input.setText(numeros)
         elif len(numeros) <= 7:
@@ -609,21 +650,15 @@ class PessoaForm(QWidget):
         else:
             self.celular_input.setText(f"({numeros[:2]}) {numeros[2:7]}-{numeros[7:]}")
         
-        # Coloca o cursor no final
         self.celular_input.setCursorPosition(len(self.celular_input.text()))
     
-    # ---------- MÉTODO PARA VALIDAR CPF/CNPJ (MÁXIMO 15 DÍGITOS) ----------
+    # ---------- MÉTODO PARA VALIDAR CPF/CNPJ ----------
     def on_documento_changed(self, text):
-        """Auto formata o documento enquanto digita - máximo 14 dígitos"""
-        # Remove caracteres não numéricos
         numeros = ''.join(filter(str.isdigit, text))
-        
-        # Limita a 14 dígitos (CNPJ) ou 11 (CPF)
         if len(numeros) > 14:
             numeros = numeros[:14]
         
         if len(numeros) <= 11:
-            # CPF
             if len(numeros) <= 3:
                 self.documento_input.setText(numeros)
             elif len(numeros) <= 6:
@@ -633,7 +668,6 @@ class PessoaForm(QWidget):
             else:
                 self.documento_input.setText(f"{numeros[:3]}.{numeros[3:6]}.{numeros[6:9]}-{numeros[9:]}")
         elif len(numeros) <= 14:
-            # CNPJ
             if len(numeros) <= 2:
                 self.documento_input.setText(numeros)
             elif len(numeros) <= 5:
@@ -645,14 +679,11 @@ class PessoaForm(QWidget):
             else:
                 self.documento_input.setText(f"{numeros[:2]}.{numeros[2:5]}.{numeros[5:8]}/{numeros[8:12]}-{numeros[12:]}")
         
-        # Coloca o cursor no final
         self.documento_input.setCursorPosition(len(self.documento_input.text()))
     
     # ---------- MÉTODO PARA VALIDAR CEP ----------
     def on_cep_changed(self, text):
-        """Auto formata CEP e consulta quando 8 dígitos são digitados"""
         numeros = ''.join(filter(str.isdigit, text))
-        
         if len(numeros) > 8:
             numeros = numeros[:8]
         
@@ -666,9 +697,7 @@ class PessoaForm(QWidget):
         if len(numeros) == 8:
             self.consultar_cep()
     
-    # NOTA: Os métodos abaixo são os mesmos da versão anterior, mantenha-os
     def validar_campos(self):
-        """Valida todos os campos do formulário"""
         erros = []
         
         nome = self.nome_input.text().strip()
@@ -760,7 +789,6 @@ class PessoaForm(QWidget):
         return erros
 
     def validar_documento(self):
-        """Valida o documento atual"""
         documento = self.documento_input.text().strip()
         if not documento:
             QMessageBox.warning(self, "⚠️ Aviso", "Digite um CPF ou CNPJ primeiro!")
@@ -791,7 +819,6 @@ class PessoaForm(QWidget):
                               "Documento inválido. Use CPF (11 dígitos) ou CNPJ (14 dígitos)")
 
     def consultar_cep(self):
-        """Consulta o CEP informado"""
         cep = self.cep_input.text().strip()
         
         if not Validators.validar_cep(cep):
@@ -807,7 +834,6 @@ class PessoaForm(QWidget):
         QTimer.singleShot(100, self._realizar_consulta_cep)
 
     def _realizar_consulta_cep(self):
-        """Realiza a consulta do CEP de fato"""
         cep = self.cep_input.text().strip()
         resultado = self.cep_service.consultar_cep(cep)
         
@@ -838,31 +864,28 @@ class PessoaForm(QWidget):
             QMessageBox.warning(self, "❌ Erro na Consulta", resultado['error'])
 
     def on_tipo_pessoa_changed(self, tipo):
-        """Muda o label do documento conforme o tipo de pessoa"""
         pass
 
     def carregar_lista_pessoas(self):
-        """Carrega a lista de pessoas na tabela"""
-        # Verifica se a tabela existe
         if self.tabela is None:
             QTimer.singleShot(100, self.carregar_lista_pessoas)
             return
         
-        # Verifica se o tabs existe
         if self.tabs is None:
             QTimer.singleShot(100, self.carregar_lista_pessoas)
             return
         
         try:
             pessoas = self.db.get_all_pessoas()
+            self.dados_filtrados = pessoas  # Armazena os dados
             self._popular_tabela(pessoas)
             self.status_label.setText(f"✅ {len(pessoas)} registros")
             self.status_label.setStyleSheet("color: #2ECC71; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+            self._atualizar_botao_pdf(len(pessoas))
         except RuntimeError:
             QTimer.singleShot(100, self.carregar_lista_pessoas)
 
     def pesquisar_pessoas(self):
-        """Pesquisa pessoas pelo nome ou CPF/CNPJ"""
         if self.tabela is None:
             return
         
@@ -870,19 +893,37 @@ class PessoaForm(QWidget):
             termo = self.busca_input.text().strip()
             if termo:
                 pessoas = self.db.search_pessoas(termo)
+                self.dados_filtrados = pessoas  # Armazena os dados filtrados
                 self.status_label.setText(f"🔍 {len(pessoas)} resultados")
                 self.status_label.setStyleSheet("color: #F39C12; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
             else:
                 pessoas = self.db.get_all_pessoas()
+                self.dados_filtrados = pessoas
                 self.status_label.setText(f"✅ {len(pessoas)} registros")
                 self.status_label.setStyleSheet("color: #2ECC71; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
             self._popular_tabela(pessoas)
+            self._atualizar_botao_pdf(len(pessoas))
         except RuntimeError:
             pass
 
+    def limpar_filtro(self):
+        """Limpa o campo de filtro e recarrega todos os dados"""
+        self.busca_input.clear()
+        self.carregar_lista_pessoas()
+        self.status_label.setText("🧹 Filtro limpo")
+        self.status_label.setStyleSheet("color: #3498DB; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+
+    def _atualizar_botao_pdf(self, total_registros):
+        """Atualiza o estado do botão de exportar PDF"""
+        if hasattr(self, 'btn_exportar_pdf'):
+            if total_registros > 0:
+                self.btn_exportar_pdf.setEnabled(True)
+                self.btn_exportar_pdf.setToolTip(f"Exportar {total_registros} registro(s) para PDF")
+            else:
+                self.btn_exportar_pdf.setEnabled(False)
+                self.btn_exportar_pdf.setToolTip("Nenhum registro para exportar")
+
     def _popular_tabela(self, pessoas):
-        """Popula a tabela com os dados das pessoas"""
-        # Verifica se a tabela existe e não foi deletada
         if self.tabela is None:
             return
         
@@ -903,7 +944,7 @@ class PessoaForm(QWidget):
                 self.tabela.setItem(row, 1, nome_item)
                 
                 # CPF/CNPJ
-                doc_item = QTableWidgetItem(pessoa[2])
+                doc_item = QTableWidgetItem(Validators.formatar_cpf_cnpj(pessoa[2]))
                 doc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.tabela.setItem(row, 2, doc_item)
                 
@@ -934,31 +975,47 @@ class PessoaForm(QWidget):
                 data_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.tabela.setItem(row, 6, data_item)
                 
-                # ========== BOTÕES DE AÇÃO - SOMENTE ÍCONES ==========
+                # ========== BOTÕES DE AÇÃO ==========
                 widget_botoes = QWidget()
                 widget_botoes.setStyleSheet("background: transparent;")
                 
-                # Layout vertical com centralização
                 layout_botoes = QVBoxLayout(widget_botoes)
                 layout_botoes.setContentsMargins(0, 0, 0, 0)
                 layout_botoes.setSpacing(0)
-                
-                # Stretch em cima
                 layout_botoes.addStretch(1)
                 
-                # Container horizontal para os botões
                 container_botoes = QWidget()
                 container_botoes.setStyleSheet("background: transparent;")
                 container_layout = QHBoxLayout(container_botoes)
                 container_layout.setContentsMargins(0, 0, 0, 0)
-                container_layout.setSpacing(8)
-                
-                # Centraliza horizontalmente
+                container_layout.setSpacing(6)
                 container_layout.addStretch()
                 
-                # Botão Editar - Somente ícone
+                # Botão PDF individual
+                btn_pdf = QPushButton("📄")
+                btn_pdf.setFixedSize(30, 30)
+                btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_pdf.setToolTip("Exportar ficha para PDF")
+                btn_pdf.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #E74C3C, stop:1 #C0392B);
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #C0392B, stop:1 #A93226);
+                    }
+                """)
+                btn_pdf.clicked.connect(lambda checked, r=row: self.exportar_ficha_pdf(r))
+                container_layout.addWidget(btn_pdf)
+                
+                # Botão Editar
                 btn_editar = QPushButton("✏️")
-                btn_editar.setFixedSize(34, 30)
+                btn_editar.setFixedSize(30, 30)
                 btn_editar.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_editar.setToolTip("Editar usuário")
                 btn_editar.setStyleSheet("""
@@ -968,22 +1025,19 @@ class PessoaForm(QWidget):
                         color: white;
                         border: none;
                         border-radius: 6px;
-                        font-size: 16px;
+                        font-size: 14px;
                     }
                     QPushButton:hover {
                         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                             stop:0 #4A8BC2, stop:1 #3A7BAF);
                     }
-                    QPushButton:pressed {
-                        background: #3A7BAF;
-                    }
                 """)
                 btn_editar.clicked.connect(lambda checked, r=row: self.editar_pessoa(r))
                 container_layout.addWidget(btn_editar)
                 
-                # Botão Excluir - Somente ícone
+                # Botão Excluir
                 btn_excluir = QPushButton("🗑️")
-                btn_excluir.setFixedSize(34, 30)
+                btn_excluir.setFixedSize(30, 30)
                 btn_excluir.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_excluir.setToolTip("Excluir usuário")
                 btn_excluir.setStyleSheet("""
@@ -993,25 +1047,18 @@ class PessoaForm(QWidget):
                         color: white;
                         border: none;
                         border-radius: 6px;
-                        font-size: 16px;
+                        font-size: 14px;
                     }
                     QPushButton:hover {
                         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                             stop:0 #C0392B, stop:1 #A93226);
                     }
-                    QPushButton:pressed {
-                        background: #A93226;
-                    }
                 """)
                 btn_excluir.clicked.connect(lambda checked, r=row: self.excluir_pessoa(r))
                 container_layout.addWidget(btn_excluir)
                 
-                # Centraliza horizontalmente
                 container_layout.addStretch()
-                
                 layout_botoes.addWidget(container_botoes)
-                
-                # Stretch embaixo
                 layout_botoes.addStretch(2)
                 
                 self.tabela.setCellWidget(row, 7, widget_botoes)
@@ -1020,7 +1067,6 @@ class PessoaForm(QWidget):
                 print(f"Erro ao popular linha {row}: {e}")
                 continue
         
-        # Ajusta altura das linhas
         try:
             for row in range(len(pessoas)):
                 self.tabela.setRowHeight(row, 55)
@@ -1028,7 +1074,6 @@ class PessoaForm(QWidget):
             pass
 
     def salvar_pessoa(self):
-        """Salva uma nova pessoa ou atualiza existente"""
         erros = self.validar_campos()
         
         if erros:
@@ -1069,7 +1114,6 @@ class PessoaForm(QWidget):
             self.status_label.setStyleSheet("color: #E74C3C; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
 
     def editar_pessoa(self, row):
-        """Carrega os dados de uma pessoa para edição"""
         id_item = self.tabela.item(row, 0)
         if not id_item:
             return
@@ -1115,7 +1159,6 @@ class PessoaForm(QWidget):
         QMessageBox.information(self, "✏️ Edição", "Dados carregados para edição!")
 
     def cancelar_edicao(self):
-        """Cancela o modo de edição"""
         self.modo_edicao = False
         self.id_editando = None
         self.btn_salvar.setText("💾 Salvar")
@@ -1125,7 +1168,6 @@ class PessoaForm(QWidget):
         self.status_label.setStyleSheet("color: #2ECC71; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
 
     def excluir_pessoa(self, row):
-        """Exclui uma pessoa do banco de dados"""
         id_item = self.tabela.item(row, 0)
         if not id_item:
             return
@@ -1150,7 +1192,6 @@ class PessoaForm(QWidget):
                 QMessageBox.critical(self, "❌ Erro!", msg)
 
     def limpar_campos(self):
-        """Limpa todos os campos do formulário"""
         self.nome_input.clear()
         self.documento_input.clear()
         self.email_input.clear()
@@ -1173,7 +1214,142 @@ class PessoaForm(QWidget):
         if self.modo_edicao:
             self.cancelar_edicao()
 
+    # ==================== EXPORTAÇÃO PDF ====================
+    def exportar_pdf(self):
+        """Exporta os dados da tabela (filtrados ou todos) para PDF"""
+        if not self.dados_filtrados:
+            QMessageBox.warning(self, "⚠️ Aviso", "Não há dados para exportar!")
+            return
+        
+        # Verifica se há filtro aplicado
+        filtro = self.busca_input.text().strip()
+        
+        # Abre diálogo para salvar arquivo
+        nome_padrao = "relatorio_pessoas.pdf"
+        if filtro:
+            nome_padrao = f"relatorio_filtrado_{filtro[:20]}.pdf"
+        
+        caminho, _ = QFileDialog.getSaveFileName(
+            self,
+            "💾 Salvar Relatório PDF",
+            nome_padrao,
+            "Arquivos PDF (*.pdf)"
+        )
+        
+        if not caminho:
+            return  # Usuário cancelou
+        
+        # Garante extensão .pdf
+        if not caminho.lower().endswith('.pdf'):
+            caminho += '.pdf'
+        
+        # Mostra status
+        self.status_label.setText("📄 Gerando PDF...")
+        self.status_label.setStyleSheet("color: #F39C12; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+        self.btn_exportar_pdf.setEnabled(False)
+        
+        # Processa eventos para atualizar UI
+        QApplication.processEvents()
+        
+        # Exporta
+        sucesso, mensagem, caminho_final = self.pdf_exporter.exportar_pessoas(
+            self.dados_filtrados,
+            caminho,
+            filtro if filtro else None
+        )
+        
+        self.btn_exportar_pdf.setEnabled(True)
+        
+        if sucesso:
+            self.status_label.setText("✅ PDF Exportado!")
+            self.status_label.setStyleSheet("color: #2ECC71; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+            
+            # Pergunta se quer abrir o arquivo
+            reply = QMessageBox.question(
+                self,
+                "✅ PDF Exportado",
+                f"{mensagem}\n\nDeseja abrir o arquivo agora?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self._abrir_arquivo(caminho_final)
+        else:
+            self.status_label.setText("❌ Erro ao exportar PDF")
+            self.status_label.setStyleSheet("color: #E74C3C; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+            QMessageBox.critical(self, "❌ Erro", mensagem)
+
+    def exportar_ficha_pdf(self, row):
+        """Exporta a ficha individual de uma pessoa para PDF"""
+        id_item = self.tabela.item(row, 0)
+        if not id_item:
+            return
+        
+        pessoa_id = int(id_item.text())
+        pessoa = self.db.get_pessoa_by_id(pessoa_id)
+        
+        if not pessoa:
+            QMessageBox.warning(self, "❌ Erro", "Pessoa não encontrada!")
+            return
+        
+        # Nome padrão do arquivo
+        nome_limpo = ''.join(c for c in pessoa[1] if c.isalnum() or c == ' ')[:30].strip()
+        nome_padrao = f"ficha_{nome_limpo}.pdf"
+        
+        caminho, _ = QFileDialog.getSaveFileName(
+            self,
+            "💾 Salvar Ficha PDF",
+            nome_padrao,
+            "Arquivos PDF (*.pdf)"
+        )
+        
+        if not caminho:
+            return
+        
+        if not caminho.lower().endswith('.pdf'):
+            caminho += '.pdf'
+        
+        self.status_label.setText("📄 Gerando ficha...")
+        self.status_label.setStyleSheet("color: #F39C12; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+        QApplication.processEvents()
+        
+        sucesso, mensagem, caminho_final = self.pdf_exporter.exportar_pessoa_individual(
+            pessoa, caminho
+        )
+        
+        if sucesso:
+            self.status_label.setText("✅ Ficha Exportada!")
+            self.status_label.setStyleSheet("color: #2ECC71; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+            
+            reply = QMessageBox.question(
+                self,
+                "✅ Ficha Exportada",
+                f"{mensagem}\n\nDeseja abrir o arquivo agora?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self._abrir_arquivo(caminho_final)
+        else:
+            self.status_label.setText("❌ Erro ao gerar ficha")
+            self.status_label.setStyleSheet("color: #E74C3C; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 12px;")
+            QMessageBox.critical(self, "❌ Erro", mensagem)
+
+    def _abrir_arquivo(self, caminho):
+        """Abre o arquivo com o visualizador padrão do sistema"""
+        try:
+            if sys.platform == 'win32':
+                os.startfile(caminho)
+            elif sys.platform == 'darwin':  # macOS
+                os.system(f'open "{caminho}"')
+            else:  # Linux
+                os.system(f'xdg-open "{caminho}"')
+        except Exception as e:
+            QMessageBox.warning(self, "⚠️ Aviso", 
+                              f"Não foi possível abrir o arquivo automaticamente.\n\n"
+                              f"O arquivo foi salvo em:\n{caminho}\n\n"
+                              f"Erro: {str(e)}")
+
     def closeEvent(self, event):
-        """Evento chamado quando a janela é fechada"""
         self.db.close()
         event.accept()
